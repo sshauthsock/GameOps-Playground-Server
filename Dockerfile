@@ -25,9 +25,11 @@ WORKDIR /app
 # 빌드 스테이지에서 컴파일된 바이너리 복사
 COPY --from=builder /app/server .
 
-# 포트 노출 (기본값 7777)
+# 포트 노출 (Railway의 $PORT 환경 변수 사용)
+# Railway는 $PORT 환경 변수를 자동으로 제공합니다
 EXPOSE 7777
 
-# 서버 실행 (기본 포트 7777)
-CMD ["./server", "7777"]
+# 서버 실행 (Railway의 PORT 환경 변수 사용, 없으면 기본값 7777)
+# Railway, Render 등 클라우드 플랫폼은 $PORT 환경 변수를 제공합니다
+CMD sh -c "./server ${PORT:-7777}"
 
