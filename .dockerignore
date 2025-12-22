@@ -1,0 +1,31 @@
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+*.exe
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (optional - remove if you want docs in image)
+docs/
+
+# Tests
+tests/
+
+# Scripts
+scripts/
+
