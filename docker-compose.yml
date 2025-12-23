@@ -7,9 +7,10 @@ services:
       dockerfile: Dockerfile
     container_name: game-server
     ports:
-      - "7777:7777" # 호스트:컨테이너 포트 매핑
+      - "7777:7777" # TCP 포트 (호스트:컨테이너 포트 매핑)
+      - "7778:7778" # WebSocket 포트 (호스트:컨테이너 포트 매핑)
     restart: unless-stopped # 컨테이너가 종료되면 자동 재시작
-    command: ["./server", "7777"] # 7777 포트로 서버 실행
+    command: ["./server", "7777", "7778"] # TCP 포트 7777, WebSocket 포트 7778로 서버 실행
     networks:
       - game-network
 

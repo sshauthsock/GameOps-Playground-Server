@@ -8,6 +8,8 @@
 #include <map>          
 #include <cstring>      // memcpy 함수용
 #include <algorithm>
+#include <memory>
+#include "websocket_server.h"
 
 #define MAX_EVENTS 10
 #define BUFFER_SIZE 1024 
@@ -58,6 +60,9 @@ std::map<int, int> player_room_map;
 std::map<int, std::string> global_player_names;
 // 다음 방 ID 발급을 위한 카운터
 int next_room_id = 1; 
+// WebSocket 서버 전역 변수
+std::unique_ptr<WebSocketServer> ws_server;
+std::map<int, bool> is_websocket_client;  // 클라이언트가 WebSocket인지 구분
 // ===============================================
 
 
@@ -87,7 +92,16 @@ void SendMessage(int client_fd, unsigned short message_id, const std::vector<cha
         std::memcpy(&message[HEADER_SIZE], payload.data(), payload.size());
     }
 
-    // 5. 최종 송신 (write)
+    // WebSocket 클라이언트인지 확인
+    if (is_websocket_client[client_fd] && ws_server)
+    {
+        // WebSocket으로 전송
+        ws_server->send_to_client(client_fd, message);
+        std::cout << "  -> [WebSocket] ID " << message_id << " 전송 완료" << std::endl;
+        return;
+    }
+
+    // 기존 TCP 전송
     if (write(client_fd, message.data(), message.size()) < 0)
     {
         std::cerr << "클라이언트(FD: " << client_fd << ")에게 ID " << message_id << " 응답 송신 실패!" << std::endl;
@@ -99,9 +113,37 @@ void SendMessage(int client_fd, unsigned short message_id, const std::vector<cha
 }
 
 
+// 함수 선언 (전방 선언)
+void HandleBuffer(int client_fd, std::vector<char>& buffer);
+
+// WebSocket 메시지 핸들러
+void HandleWebSocketMessage(int client_fd, const std::vector<char>& data)
+{
+    // WebSocket 클라이언트로 표시 (FD가 10000 이상이면 WebSocket 클라이언트)
+    if (!is_websocket_client[client_fd])
+    {
+        is_websocket_client[client_fd] = true;
+        client_buffers[client_fd] = std::vector<char>();
+        std::cout << "[WebSocket] 클라이언트 등록 완료 (FD: " << client_fd << ")" << std::endl;
+    }
+    
+    // WebSocket 메시지를 기존 TCP 서버의 HandleBuffer 함수로 전달
+    // client_fd를 WebSocket 전용 FD로 매핑
+    std::vector<char>& buffer = client_buffers[client_fd];
+    buffer.insert(buffer.end(), data.begin(), data.end());
+    HandleBuffer(client_fd, buffer);
+}
+
 void CleanupPlayer(int client_fd)
 {
     std::cout << "[플레이어 정리 시작] (FD: " << client_fd << ")" << std::endl;
+    
+    // WebSocket 클라이언트인지 확인
+    if (is_websocket_client[client_fd] && ws_server)
+    {
+        ws_server->close_client(client_fd);
+        is_websocket_client.erase(client_fd);
+    }
     
     // 1. [정리 1] '이름 맵'에서 제거
     global_player_names.erase(client_fd);
@@ -1597,13 +1639,45 @@ turn_transition:
 // ===============================================
 int main(int argc, char* argv[])
 {
-    if (argc < 2) 
-    { 
-        std::cerr << "사용법: ./server [포트번호]" << std::endl; 
-        return 1; 
+    // 환경 변수에서 포트 읽기 (Railway/Render 호환)
+    const char* env_port = std::getenv("PORT");
+    const char* disable_ws = std::getenv("DISABLE_WEBSOCKET");  // WebSocket 비활성화 옵션
+    int tcp_port = 7777;  // 기본값
+    int ws_port = 7778;   // 기본값
+    bool enable_websocket = true;
+    
+    // 명령줄 인자가 있으면 우선 사용
+    if (argc >= 2) {
+        tcp_port = atoi(argv[1]);
+    } else if (env_port) {
+        // 환경 변수가 있으면 TCP 포트로 사용
+        tcp_port = atoi(env_port);
+        // Railway/Render는 하나의 포트만 제공하므로 WebSocket은 비활성화
+        enable_websocket = false;
+        std::cout << "[배포 모드] 환경 변수 PORT=" << tcp_port << " 사용, WebSocket 비활성화" << std::endl;
     }
-    int port = atoi(argv[1]); 
+    
+    if (argc >= 3) {
+        ws_port = atoi(argv[2]);
+        enable_websocket = true;
+    } else if (argc == 1 && !env_port) {
+        // 인자도 없고 환경 변수도 없으면 기본값 사용
+        std::cout << "포트 인자가 없어 기본값 사용: TCP=" << tcp_port << ", WebSocket=" << ws_port << std::endl;
+    }
+    
+    // DISABLE_WEBSOCKET 환경 변수로 강제 비활성화 가능
+    if (disable_ws && (std::string(disable_ws) == "1" || std::string(disable_ws) == "true")) {
+        enable_websocket = false;
+        std::cout << "[배포 모드] DISABLE_WEBSOCKET 환경 변수로 WebSocket 비활성화" << std::endl;
+    }
 
+    // WebSocket 서버 시작 (활성화된 경우만)
+    if (enable_websocket) {
+        ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage);
+        ws_server->start();
+    } else {
+        std::cout << "[배포 모드] WebSocket 서버 비활성화 (TCP 서버만 사용)" << std::endl;
+    }
 
     // 1. socket, bind, listen
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -1612,11 +1686,11 @@ int main(int argc, char* argv[])
     struct sockaddr_in server_addr;
     server_addr.sin_family = AF_INET;           
     server_addr.sin_addr.s_addr = INADDR_ANY;   
-    server_addr.sin_port = htons(port);         
+    server_addr.sin_port = htons(tcp_port);         
     if (bind(server_fd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
         std::cerr << "바인딩 실패!" << std::endl; return 1;
     }
-    std::cout << "바인딩 성공! 포트 " << port << " 할당." << std::endl;
+    std::cout << "바인딩 성공! 포트 " << tcp_port << " 할당." << std::endl;
     if (listen(server_fd, 5) < 0) { std::cerr << "listen 실패!" << std::endl; return 1; }
     std::cout << "listen 성공! 클라이언트 연결 대기 중..." << std::endl;
 
@@ -1692,6 +1766,9 @@ int main(int argc, char* argv[])
         } // end for
     } // end while
 
+    if (ws_server) {
+        ws_server->stop();
+    }
     close(server_fd); 
     close(epoll_fd);  
     return 0; 
