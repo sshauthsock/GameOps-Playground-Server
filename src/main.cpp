@@ -1694,28 +1694,6 @@ int main(int argc, char* argv[])
     }
     
     // 로컬 개발 모드: TCP와 WebSocket 모두 사용
-    // Railway HTTP 서비스 모드: WebSocket만 사용 (HTTP 업그레이드 지원)
-    bool is_railway_http = (env_port != nullptr && argc < 2);
-    
-    if (is_railway_http) {
-        // Railway HTTP 서비스: WebSocket 서버만 시작 (HTTP 요청을 WebSocket으로 업그레이드)
-        std::cout << "[Railway HTTP 모드] WebSocket 서버 시작 (포트: " << ws_port << ")" << std::endl;
-        std::cout << "[Railway HTTP 모드] HTTP 요청을 WebSocket으로 업그레이드 처리" << std::endl;
-        ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage);
-        ws_server->start();
-        
-        // WebSocket 서버가 HTTP 요청을 받아서 WebSocket으로 업그레이드하므로
-        // TCP 서버는 시작하지 않음
-        std::cout << "[Railway HTTP 모드] TCP 서버 비활성화" << std::endl;
-        
-        // WebSocket 서버가 종료될 때까지 대기
-        std::cout << "[Railway HTTP 모드] 서버 실행 중..." << std::endl;
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
-        }
-    }
-    
-    // 로컬 개발 모드: TCP와 WebSocket 모두 사용
     // WebSocket 서버 시작 (활성화된 경우만)
     if (enable_websocket) {
         ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage);
