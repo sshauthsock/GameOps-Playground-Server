@@ -22,6 +22,10 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession>
     beast::flat_buffer buffer_;
     int client_fd_;  // 기존 TCP 서버와 호환을 위한 FD
     std::function<void(int, const std::vector<char>&)> message_handler_;
+    
+    // Write 큐 및 상태 관리
+    std::vector<std::vector<char>> write_queue_;
+    bool is_writing_;
 
 public:
     explicit WebSocketSession(tcp::socket socket, int client_fd,
@@ -35,6 +39,7 @@ private:
     void do_read();
     void on_read(beast::error_code ec, std::size_t bytes_transferred);
     void on_write(beast::error_code ec, std::size_t bytes_transferred);
+    void do_write();
     void fail(beast::error_code ec, char const* what);
 };
 

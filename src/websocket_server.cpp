@@ -8,6 +8,7 @@ WebSocketSession::WebSocketSession(tcp::socket socket, int client_fd,
     : ws_(std::move(socket))
     , client_fd_(client_fd)
     , message_handler_(handler)
+    , is_writing_(false)
 {
 }
 
@@ -95,10 +96,38 @@ void WebSocketSession::on_read(beast::error_code ec, std::size_t bytes_transferr
 
 void WebSocketSession::send_message(const std::vector<char>& data)
 {
+    // 큐에 메시지 추가
+    write_queue_.push_back(data);
+    
+    std::cout << "[WebSocket] 메시지 큐에 추가 (FD: " << client_fd_ 
+              << ", 크기: " << data.size() << " bytes, 큐 크기: " 
+              << write_queue_.size() << ")" << std::endl;
+    
+    // 현재 write 작업이 진행 중이 아니면 시작
+    if (!is_writing_)
+    {
+        do_write();
+    }
+}
+
+void WebSocketSession::do_write()
+{
+    if (write_queue_.empty())
+    {
+        is_writing_ = false;
+        return;
+    }
+    
+    is_writing_ = true;
+    std::vector<char> message = write_queue_.front();
+    write_queue_.erase(write_queue_.begin());
+    
     std::cout << "[WebSocket] 메시지 전송 시작 (FD: " << client_fd_ 
-              << ", 크기: " << data.size() << " bytes)" << std::endl;
+              << ", 크기: " << message.size() << " bytes, 큐에 남은 메시지: " 
+              << write_queue_.size() << ")" << std::endl;
+    
     ws_.async_write(
-        net::buffer(data.data(), data.size()),
+        net::buffer(message.data(), message.size()),
         beast::bind_front_handler(
             &WebSocketSession::on_write,
             shared_from_this()));
@@ -109,10 +138,15 @@ void WebSocketSession::on_write(beast::error_code ec, std::size_t bytes_transfer
     if (ec)
     {
         fail(ec, "write");
+        is_writing_ = false;
         return;
     }
+    
     std::cout << "[WebSocket] 메시지 전송 완료 (FD: " << client_fd_ 
               << ", 크기: " << bytes_transferred << " bytes)" << std::endl;
+    
+    // 다음 메시지 전송
+    do_write();
 }
 
 void WebSocketSession::fail(beast::error_code ec, char const* what)
