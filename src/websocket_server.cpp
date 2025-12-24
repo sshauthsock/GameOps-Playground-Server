@@ -30,6 +30,9 @@ void WebSocketSession::on_accept(beast::error_code ec)
     // 바이너리 모드 설정
     ws_.binary(true);
     
+    // 메시지 크기 제한 제거 (기본값은 64KB, 게임 패킷을 위해 제한 없음)
+    ws_.read_message_max(0);  // 0 = 제한 없음
+    
     std::cout << "[WebSocket] 클라이언트 연결 성공 (FD: " << client_fd_ << ")" << std::endl;
     do_read();
 }
