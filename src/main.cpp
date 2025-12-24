@@ -1650,11 +1650,12 @@ int main(int argc, char* argv[])
     if (argc >= 2) {
         tcp_port = atoi(argv[1]);
     } else if (env_port) {
-        // 환경 변수가 있으면 TCP 포트로 사용
+        // Railway/Render는 하나의 포트만 제공
+        // HTTP 서비스의 경우 WebSocket을 같은 포트에서 실행
         tcp_port = atoi(env_port);
-        // Railway/Render는 하나의 포트만 제공하므로 WebSocket은 비활성화
-        enable_websocket = false;
-        std::cout << "[배포 모드] 환경 변수 PORT=" << tcp_port << " 사용, WebSocket 비활성화" << std::endl;
+        ws_port = tcp_port;  // WebSocket도 같은 포트 사용
+        enable_websocket = true;  // WebSocket 활성화 (HTTP 업그레이드 지원)
+        std::cout << "[배포 모드] 환경 변수 PORT=" << tcp_port << " 사용, WebSocket도 같은 포트에서 실행" << std::endl;
     }
     
     if (argc >= 3) {
@@ -1671,6 +1672,50 @@ int main(int argc, char* argv[])
         std::cout << "[배포 모드] DISABLE_WEBSOCKET 환경 변수로 WebSocket 비활성화" << std::endl;
     }
 
+    // Railway HTTP 서비스 모드: WebSocket만 사용 (HTTP 업그레이드 지원)
+    bool is_railway_http = (env_port != nullptr && argc < 2);
+    
+    if (is_railway_http) {
+        // Railway HTTP 서비스: WebSocket 서버만 시작 (HTTP 요청을 WebSocket으로 업그레이드)
+        std::cout << "[Railway HTTP 모드] WebSocket 서버 시작 (포트: " << ws_port << ")" << std::endl;
+        std::cout << "[Railway HTTP 모드] HTTP 요청을 WebSocket으로 업그레이드 처리" << std::endl;
+        ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage);
+        ws_server->start();
+        
+        // WebSocket 서버가 HTTP 요청을 받아서 WebSocket으로 업그레이드하므로
+        // TCP 서버는 시작하지 않음
+        std::cout << "[Railway HTTP 모드] TCP 서버 비활성화" << std::endl;
+        
+        // WebSocket 서버가 종료될 때까지 대기
+        std::cout << "[Railway HTTP 모드] 서버 실행 중..." << std::endl;
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+    
+    // 로컬 개발 모드: TCP와 WebSocket 모두 사용
+    // Railway HTTP 서비스 모드: WebSocket만 사용 (HTTP 업그레이드 지원)
+    bool is_railway_http = (env_port != nullptr && argc < 2);
+    
+    if (is_railway_http) {
+        // Railway HTTP 서비스: WebSocket 서버만 시작 (HTTP 요청을 WebSocket으로 업그레이드)
+        std::cout << "[Railway HTTP 모드] WebSocket 서버 시작 (포트: " << ws_port << ")" << std::endl;
+        std::cout << "[Railway HTTP 모드] HTTP 요청을 WebSocket으로 업그레이드 처리" << std::endl;
+        ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage);
+        ws_server->start();
+        
+        // WebSocket 서버가 HTTP 요청을 받아서 WebSocket으로 업그레이드하므로
+        // TCP 서버는 시작하지 않음
+        std::cout << "[Railway HTTP 모드] TCP 서버 비활성화" << std::endl;
+        
+        // WebSocket 서버가 종료될 때까지 대기
+        std::cout << "[Railway HTTP 모드] 서버 실행 중..." << std::endl;
+        while (true) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+    
+    // 로컬 개발 모드: TCP와 WebSocket 모두 사용
     // WebSocket 서버 시작 (활성화된 경우만)
     if (enable_websocket) {
         ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage);
