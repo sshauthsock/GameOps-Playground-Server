@@ -60,13 +60,27 @@ void WebSocketSession::on_read(beast::error_code ec, std::size_t bytes_transferr
         return;
     }
 
+    // WebSocket 메시지가 완전히 수신되었는지 확인
+    // bytes_transferred는 이번 읽기에서 받은 바이트 수
+    // buffer_.size()는 현재 버퍼에 있는 전체 바이트 수
+    std::size_t buffer_size = buffer_.size();
+    
+    // 비정상적으로 큰 메시지 검증 (100MB 이상)
+    if (buffer_size > 100 * 1024 * 1024)
+    {
+        std::cerr << "[WebSocket] 비정상적으로 큰 메시지 수신: " << buffer_size 
+                  << " bytes. 연결 종료." << std::endl;
+        buffer_.consume(buffer_.size());
+        return;
+    }
+
     // 메시지를 벡터로 변환 (바이너리 데이터 지원)
     auto data = buffer_.data();
     std::vector<char> message_data(static_cast<const char*>(data.data()), 
-                                   static_cast<const char*>(data.data()) + data.size());
+                                   static_cast<const char*>(data.data()) + buffer_size);
 
     std::cout << "[WebSocket] 메시지 수신 (FD: " << client_fd_
-              << ", 크기: " << bytes_transferred << " bytes)" << std::endl;
+              << ", 크기: " << buffer_size << " bytes)" << std::endl;
 
     // 기존 TCP 서버의 메시지 핸들러 호출
     if (message_handler_)
@@ -74,12 +88,15 @@ void WebSocketSession::on_read(beast::error_code ec, std::size_t bytes_transferr
         message_handler_(client_fd_, message_data);
     }
 
+    // 버퍼 정리 (모든 데이터 소비)
     buffer_.consume(buffer_.size());
     do_read();
 }
 
 void WebSocketSession::send_message(const std::vector<char>& data)
 {
+    std::cout << "[WebSocket] 메시지 전송 시작 (FD: " << client_fd_ 
+              << ", 크기: " << data.size() << " bytes)" << std::endl;
     ws_.async_write(
         net::buffer(data.data(), data.size()),
         beast::bind_front_handler(
@@ -94,6 +111,8 @@ void WebSocketSession::on_write(beast::error_code ec, std::size_t bytes_transfer
         fail(ec, "write");
         return;
     }
+    std::cout << "[WebSocket] 메시지 전송 완료 (FD: " << client_fd_ 
+              << ", 크기: " << bytes_transferred << " bytes)" << std::endl;
 }
 
 void WebSocketSession::fail(beast::error_code ec, char const* what)
@@ -139,9 +158,12 @@ void WebSocketServer::do_accept()
             if (!ec)
             {
                 int client_fd = next_client_fd_++;
+                std::cout << "[WebSocketServer] 새 클라이언트 연결 수락 (FD: " << client_fd << ")" << std::endl;
                 auto session = std::make_shared<WebSocketSession>(
                     std::move(socket), client_fd, message_handler_);
                 sessions_[client_fd] = session;
+                std::cout << "[WebSocketServer] 세션 저장 완료 (FD: " << client_fd 
+                          << ", 총 세션 수: " << sessions_.size() << ")" << std::endl;
                 session->run();
             }
             do_accept();
@@ -155,10 +177,27 @@ void WebSocketServer::run()
 
 void WebSocketServer::send_to_client(int client_fd, const std::vector<char>& data)
 {
+    std::cout << "[WebSocketServer] send_to_client 호출 (FD: " << client_fd 
+              << ", 메시지 크기: " << data.size() << " bytes, 총 세션 수: " 
+              << sessions_.size() << ")" << std::endl;
+    
     auto it = sessions_.find(client_fd);
     if (it != sessions_.end())
     {
+        std::cout << "[WebSocketServer] 클라이언트 찾음 (FD: " << client_fd 
+                  << "), 메시지 전송 시작" << std::endl;
         it->second->send_message(data);
+    }
+    else
+    {
+        std::cerr << "[WebSocketServer] 오류: 클라이언트를 찾을 수 없음 (FD: " 
+                  << client_fd << ")" << std::endl;
+        std::cerr << "[WebSocketServer] 현재 세션 목록: ";
+        for (const auto& pair : sessions_)
+        {
+            std::cerr << pair.first << " ";
+        }
+        std::cerr << std::endl;
     }
 }
 
