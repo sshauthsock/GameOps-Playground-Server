@@ -95,6 +95,8 @@ void WebSocketSession::on_read(beast::error_code ec, std::size_t bytes_transferr
 
 void WebSocketSession::send_message(const std::vector<char>& data)
 {
+    std::cout << "[WebSocket] 메시지 전송 시작 (FD: " << client_fd_ 
+              << ", 크기: " << data.size() << " bytes)" << std::endl;
     ws_.async_write(
         net::buffer(data.data(), data.size()),
         beast::bind_front_handler(
@@ -109,6 +111,8 @@ void WebSocketSession::on_write(beast::error_code ec, std::size_t bytes_transfer
         fail(ec, "write");
         return;
     }
+    std::cout << "[WebSocket] 메시지 전송 완료 (FD: " << client_fd_ 
+              << ", 크기: " << bytes_transferred << " bytes)" << std::endl;
 }
 
 void WebSocketSession::fail(beast::error_code ec, char const* what)
@@ -154,9 +158,12 @@ void WebSocketServer::do_accept()
             if (!ec)
             {
                 int client_fd = next_client_fd_++;
+                std::cout << "[WebSocketServer] 새 클라이언트 연결 수락 (FD: " << client_fd << ")" << std::endl;
                 auto session = std::make_shared<WebSocketSession>(
                     std::move(socket), client_fd, message_handler_);
                 sessions_[client_fd] = session;
+                std::cout << "[WebSocketServer] 세션 저장 완료 (FD: " << client_fd 
+                          << ", 총 세션 수: " << sessions_.size() << ")" << std::endl;
                 session->run();
             }
             do_accept();
@@ -170,10 +177,27 @@ void WebSocketServer::run()
 
 void WebSocketServer::send_to_client(int client_fd, const std::vector<char>& data)
 {
+    std::cout << "[WebSocketServer] send_to_client 호출 (FD: " << client_fd 
+              << ", 메시지 크기: " << data.size() << " bytes, 총 세션 수: " 
+              << sessions_.size() << ")" << std::endl;
+    
     auto it = sessions_.find(client_fd);
     if (it != sessions_.end())
     {
+        std::cout << "[WebSocketServer] 클라이언트 찾음 (FD: " << client_fd 
+                  << "), 메시지 전송 시작" << std::endl;
         it->second->send_message(data);
+    }
+    else
+    {
+        std::cerr << "[WebSocketServer] 오류: 클라이언트를 찾을 수 없음 (FD: " 
+                  << client_fd << ")" << std::endl;
+        std::cerr << "[WebSocketServer] 현재 세션 목록: ";
+        for (const auto& pair : sessions_)
+        {
+            std::cerr << pair.first << " ";
+        }
+        std::cerr << std::endl;
     }
 }
 
