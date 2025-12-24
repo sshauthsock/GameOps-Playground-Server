@@ -60,13 +60,27 @@ void WebSocketSession::on_read(beast::error_code ec, std::size_t bytes_transferr
         return;
     }
 
+    // WebSocket 메시지가 완전히 수신되었는지 확인
+    // bytes_transferred는 이번 읽기에서 받은 바이트 수
+    // buffer_.size()는 현재 버퍼에 있는 전체 바이트 수
+    std::size_t buffer_size = buffer_.size();
+    
+    // 비정상적으로 큰 메시지 검증 (100MB 이상)
+    if (buffer_size > 100 * 1024 * 1024)
+    {
+        std::cerr << "[WebSocket] 비정상적으로 큰 메시지 수신: " << buffer_size 
+                  << " bytes. 연결 종료." << std::endl;
+        buffer_.consume(buffer_.size());
+        return;
+    }
+
     // 메시지를 벡터로 변환 (바이너리 데이터 지원)
     auto data = buffer_.data();
     std::vector<char> message_data(static_cast<const char*>(data.data()), 
-                                   static_cast<const char*>(data.data()) + data.size());
+                                   static_cast<const char*>(data.data()) + buffer_size);
 
     std::cout << "[WebSocket] 메시지 수신 (FD: " << client_fd_
-              << ", 크기: " << bytes_transferred << " bytes)" << std::endl;
+              << ", 크기: " << buffer_size << " bytes)" << std::endl;
 
     // 기존 TCP 서버의 메시지 핸들러 호출
     if (message_handler_)
@@ -74,6 +88,7 @@ void WebSocketSession::on_read(beast::error_code ec, std::size_t bytes_transferr
         message_handler_(client_fd_, message_data);
     }
 
+    // 버퍼 정리 (모든 데이터 소비)
     buffer_.consume(buffer_.size());
     do_read();
 }
