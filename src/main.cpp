@@ -275,6 +275,14 @@ void HandleBuffer(int client_fd, std::vector<char>& buffer)
             (unsigned char)buffer[1] << 8 | (unsigned char)buffer[0]
         );
 
+        // 잘못된 패킷 길이 검증 (최소 헤더 크기, 최대 합리적 크기)
+        if (packet_length < HEADER_SIZE || packet_length > 1024 * 1024)  // 1MB 제한
+        {
+            std::cerr << "[오류] 잘못된 패킷 길이: " << packet_length << " 바이트. 버퍼 정리." << std::endl;
+            buffer.clear();
+            return;
+        }
+
         if (buffer.size() < packet_length)
         {
             return;
@@ -1626,7 +1634,25 @@ turn_transition:
     {
         std::cout << "  -> 알 수 없는 ID (" << message_id << ") 입니다. 무시합니다." << std::endl;
         // 알 수 없는 ID의 경우에도 버퍼 정리
-        buffer.erase(buffer.begin(), buffer.begin() + packet_length);
+        if (packet_length > 0 && packet_length <= buffer.size())
+        {
+            buffer.erase(buffer.begin(), buffer.begin() + packet_length);
+        }
+        else
+        {
+            // 잘못된 패킷 길이면 버퍼 정리
+            std::cerr << "[오류] 잘못된 패킷 길이로 인한 버퍼 정리: " << packet_length << " 바이트" << std::endl;
+            buffer.clear();
+            return;
+        }
+    }
+    
+    // 버퍼 크기가 비정상적으로 크면 경고
+    if (buffer.size() > 1024 * 1024)  // 1MB 이상
+    {
+        std::cerr << "[경고] 버퍼 크기가 비정상적으로 큼: " << buffer.size() << " 바이트. 버퍼 정리." << std::endl;
+        buffer.clear();
+        return;
     }
     
     std::cout << "[메시지 처리 완료] 가방에 " << buffer.size() << " 바이트 남음." << std::endl;
