@@ -201,33 +201,39 @@ void WebSocketServer::stop()
 
 void WebSocketServer::do_accept()
 {
+    std::cout << "[WebSocketServer] do_accept 호출 - 새 연결 대기 중..." << std::endl;
     acceptor_.async_accept(
-        net::bind_executor(strand_, [this](beast::error_code ec, tcp::socket socket)
+        [this](beast::error_code ec, tcp::socket socket)
         {
+            std::cout << "[WebSocketServer] async_accept 콜백 실행 (오류: " << (ec ? ec.message() : "없음") << ")" << std::endl;
             if (!ec)
             {
-                int client_fd = next_client_fd_++;
-                std::cout << "[WebSocketServer] 새 클라이언트 연결 수락 (FD: " << client_fd << ")" << std::endl;
-                
-                auto session = std::make_shared<WebSocketSession>(
-                    std::move(socket), client_fd, message_handler_,
-                    [this](int fd) { 
-                        std::cout << "[WebSocketServer] 세션 제거 콜백 호출 (FD: " << fd << ")" << std::endl;
-                        this->close_client(fd); 
-                    });
-                
-                sessions_[client_fd] = session;
-                std::cout << "[WebSocketServer] 세션 저장 완료 (FD: " << client_fd 
-                          << ", 총 세션 수: " << sessions_.size() << ")" << std::endl;
-                
-                session->run();
+                std::cout << "[WebSocketServer] TCP 연결 수락 성공, strand로 전달 중..." << std::endl;
+                // strand를 통해 FD 할당 및 세션 저장 (스레드 안전성 보장)
+                net::post(strand_, [this, socket = std::move(socket)]() mutable {
+                    int client_fd = next_client_fd_++;
+                    std::cout << "[WebSocketServer] 새 클라이언트 연결 수락 (FD: " << client_fd << ")" << std::endl;
+                    
+                    auto session = std::make_shared<WebSocketSession>(
+                        std::move(socket), client_fd, message_handler_,
+                        [this](int fd) { 
+                            std::cout << "[WebSocketServer] 세션 제거 콜백 호출 (FD: " << fd << ")" << std::endl;
+                            this->close_client(fd); 
+                        });
+                    
+                    sessions_[client_fd] = session;
+                    std::cout << "[WebSocketServer] 세션 저장 완료 (FD: " << client_fd 
+                              << ", 총 세션 수: " << sessions_.size() << ")" << std::endl;
+                    
+                    session->run();
+                });
             }
             else
             {
                 std::cerr << "[WebSocketServer] 연결 수락 오류: " << ec.message() << std::endl;
             }
             do_accept();
-        }));
+        });
 }
 
 void WebSocketServer::run()
