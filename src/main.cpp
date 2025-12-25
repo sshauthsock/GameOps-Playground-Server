@@ -626,7 +626,10 @@ void HandleBuffer(int client_fd, std::vector<char>& buffer)
             std::memcpy(response_payload.data(), &success, sizeof(bool));
             SendMessage(client_fd, 316, response_payload);
             
-            CleanupPlayer(client_fd);
+            // [핵심 수정] 방 나가기는 연결을 끊는 것이 아니므로 CleanupPlayer를 호출하지 않음
+            // CleanupPlayer는 WebSocket 세션을 제거하므로, 방 나가기 후에도 연결을 유지해야 함
+            // 대신 필요한 정리만 수행 (이미 위에서 player_room_map에서 제거함)
+            std::cout << "    -> [방 나가기 완료] (FD: " << client_fd << ")는 로비로 돌아갔습니다. 세션은 유지됩니다." << std::endl;
 
             // 6. [방송] '방에 남은 사람'들에게 ID 317 '방송'
             // [핵심 수정] 나간 클라이언트(client_fd)는 제외하고 브로드캐스트
