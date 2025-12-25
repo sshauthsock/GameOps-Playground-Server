@@ -832,6 +832,32 @@ void HandleBuffer(int client_fd, std::vector<char>& buffer)
                     SendMessage(p.fd, 331, response_payload);
                 }
                 target_room.state = RoomState::INGAME;
+                
+                // 게임 시작 시 모든 플레이어 정보를 각 클라이언트에게 브로드캐스트
+                // 각 플레이어에게 다른 모든 플레이어의 정보를 전송 (자신 제외)
+                std::cout << "   -> [게임 시작] 모든 플레이어 정보 브로드캐스트 시작" << std::endl;
+                for (const Player& recipient : target_room.players)
+                {
+                    // 각 플레이어에게 다른 모든 플레이어의 정보를 전송
+                    for (const Player& player : target_room.players)
+                    {
+                        if (player.fd != recipient.fd)
+                        {
+                            // ID 312 (PlayerJoined) 메시지로 다른 플레이어 정보 전송
+                            // 페이로드: int player_id, char[20] player_name
+                            std::vector<char> player_info_payload(sizeof(int) + 20);
+                            std::memcpy(player_info_payload.data(), &player.fd, sizeof(int));
+                            std::string player_name = global_player_names[player.fd];
+                            std::strncpy(player_info_payload.data() + sizeof(int), player_name.c_str(), 20);
+                            player_info_payload[sizeof(int) + 19] = '\0';
+                            
+                            SendMessage(recipient.fd, 312, player_info_payload);
+                            std::cout << "   -> [ID 312 전송] FD " << recipient.fd << "에게 플레이어 정보 (FD: " << player.fd << ", Name: " << player_name << ") 전송" << std::endl;
+                        }
+                    }
+                }
+                std::cout << "   -> [게임 시작] 모든 플레이어 정보 브로드캐스트 완료" << std::endl;
+                std::cout.flush();
 
                 // 1. ID 430용 페이로드 조립 (int + int = 8바이트)
                 std::vector<char> turn_payload(sizeof(int) * 2); 
