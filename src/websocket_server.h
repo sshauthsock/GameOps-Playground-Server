@@ -4,6 +4,7 @@
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
 #include <boost/asio/ip/tcp.hpp>
+#include <boost/asio/strand.hpp>
 #include <memory>
 #include <map>
 #include <vector>
@@ -49,7 +50,7 @@ private:
 class WebSocketServer
 {
     net::io_context ioc_;
-    net::io_context::strand strand_;  // 스레드 안전성을 위한 strand
+    net::strand<net::io_context::executor_type> strand_;  // 스레드 안전성을 위한 strand
     tcp::acceptor acceptor_;
     std::map<int, std::shared_ptr<WebSocketSession>> sessions_;
     std::function<void(int, const std::vector<char>&)> message_handler_;
