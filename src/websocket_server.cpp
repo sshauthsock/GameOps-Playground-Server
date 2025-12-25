@@ -202,12 +202,13 @@ void WebSocketServer::stop()
 void WebSocketServer::do_accept()
 {
     acceptor_.async_accept(
-        [this](beast::error_code ec, tcp::socket socket)
+        net::bind_executor(strand_, [this](beast::error_code ec, tcp::socket socket)
         {
             if (!ec)
             {
                 int client_fd = next_client_fd_++;
                 std::cout << "[WebSocketServer] 새 클라이언트 연결 수락 (FD: " << client_fd << ")" << std::endl;
+                
                 auto session = std::make_shared<WebSocketSession>(
                     std::move(socket), client_fd, message_handler_,
                     [this](int fd) { 
@@ -215,12 +216,9 @@ void WebSocketServer::do_accept()
                         this->close_client(fd); 
                     });
                 
-                // strand를 통해 세션 저장 (스레드 안전성 보장)
-                net::post(strand_, [this, client_fd, session]() {
-                    sessions_[client_fd] = session;
-                    std::cout << "[WebSocketServer] 세션 저장 완료 (FD: " << client_fd 
-                              << ", 총 세션 수: " << sessions_.size() << ")" << std::endl;
-                });
+                sessions_[client_fd] = session;
+                std::cout << "[WebSocketServer] 세션 저장 완료 (FD: " << client_fd 
+                          << ", 총 세션 수: " << sessions_.size() << ")" << std::endl;
                 
                 session->run();
             }
@@ -229,7 +227,7 @@ void WebSocketServer::do_accept()
                 std::cerr << "[WebSocketServer] 연결 수락 오류: " << ec.message() << std::endl;
             }
             do_accept();
-        });
+        }));
 }
 
 void WebSocketServer::run()
