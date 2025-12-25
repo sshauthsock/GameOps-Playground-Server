@@ -214,9 +214,14 @@ void WebSocketServer::do_accept()
                         std::cout << "[WebSocketServer] 세션 제거 콜백 호출 (FD: " << fd << ")" << std::endl;
                         this->close_client(fd); 
                     });
-                sessions_[client_fd] = session;
-                std::cout << "[WebSocketServer] 세션 저장 완료 (FD: " << client_fd 
-                          << ", 총 세션 수: " << sessions_.size() << ")" << std::endl;
+                
+                // strand를 통해 세션 저장 (스레드 안전성 보장)
+                net::post(strand_, [this, client_fd, session]() {
+                    sessions_[client_fd] = session;
+                    std::cout << "[WebSocketServer] 세션 저장 완료 (FD: " << client_fd 
+                              << ", 총 세션 수: " << sessions_.size() << ")" << std::endl;
+                });
+                
                 session->run();
             }
             else
