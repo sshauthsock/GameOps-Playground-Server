@@ -26,6 +26,8 @@ void WebSocketSession::on_accept(beast::error_code ec)
 {
     if (ec)
     {
+        std::cerr << "[WebSocket] accept 실패 (FD: " << client_fd_ 
+                  << "): " << ec.message() << std::endl;
         fail(ec, "accept");
         return;
     }
@@ -169,7 +171,8 @@ void WebSocketSession::fail(beast::error_code ec, char const* what)
 // WebSocketServer 구현
 WebSocketServer::WebSocketServer(unsigned short port,
                                 std::function<void(int, const std::vector<char>&)> handler)
-    : acceptor_(ioc_, tcp::endpoint(tcp::v4(), port))
+    : strand_(net::make_strand(ioc_))
+    , acceptor_(ioc_, tcp::endpoint(tcp::v4(), port))
     , message_handler_(handler)
     , next_client_fd_(10000)  // TCP FD와 겹치지 않도록 큰 수로 시작
 {
@@ -207,11 +210,18 @@ void WebSocketServer::do_accept()
                 std::cout << "[WebSocketServer] 새 클라이언트 연결 수락 (FD: " << client_fd << ")" << std::endl;
                 auto session = std::make_shared<WebSocketSession>(
                     std::move(socket), client_fd, message_handler_,
-                    [this](int fd) { this->close_client(fd); });
+                    [this](int fd) { 
+                        std::cout << "[WebSocketServer] 세션 제거 콜백 호출 (FD: " << fd << ")" << std::endl;
+                        this->close_client(fd); 
+                    });
                 sessions_[client_fd] = session;
                 std::cout << "[WebSocketServer] 세션 저장 완료 (FD: " << client_fd 
                           << ", 총 세션 수: " << sessions_.size() << ")" << std::endl;
                 session->run();
+            }
+            else
+            {
+                std::cerr << "[WebSocketServer] 연결 수락 오류: " << ec.message() << std::endl;
             }
             do_accept();
         });
@@ -224,15 +234,15 @@ void WebSocketServer::run()
 
 void WebSocketServer::send_to_client(int client_fd, const std::vector<char>& data)
 {
-    // io_context에서 실행되도록 post
-    net::post(ioc_, [this, client_fd, data]() {
+    // strand를 사용하여 스레드 안전성 보장 및 순차 실행
+    net::post(strand_, [this, client_fd, data]() {
         do_send_to_client(client_fd, data);
     });
 }
 
 void WebSocketServer::do_send_to_client(int client_fd, const std::vector<char>& data)
 {
-    std::cout << "[WebSocketServer] send_to_client 호출 (FD: " << client_fd 
+    std::cout << "[WebSocketServer] do_send_to_client 실행 (FD: " << client_fd 
               << ", 메시지 크기: " << data.size() << " bytes, 총 세션 수: " 
               << sessions_.size() << ")" << std::endl;
     
@@ -253,13 +263,16 @@ void WebSocketServer::do_send_to_client(int client_fd, const std::vector<char>& 
             std::cerr << pair.first << " ";
         }
         std::cerr << std::endl;
+        
+        // 세션이 없는 경우 디버깅 정보 출력
+        std::cerr << "[WebSocketServer] 디버깅: 세션이 생성되었는지 확인 필요" << std::endl;
     }
 }
 
 void WebSocketServer::close_client(int client_fd)
 {
-    // io_context에서 실행되도록 post
-    net::post(ioc_, [this, client_fd]() {
+    // strand를 사용하여 스레드 안전성 보장 및 순차 실행
+    net::post(strand_, [this, client_fd]() {
         auto it = sessions_.find(client_fd);
         if (it != sessions_.end())
         {
