@@ -170,10 +170,12 @@ void WebSocketSession::fail(beast::error_code ec, char const* what)
 
 // WebSocketServer 구현
 WebSocketServer::WebSocketServer(unsigned short port,
-                                std::function<void(int, const std::vector<char>&)> handler)
+                                std::function<void(int, const std::vector<char>&)> handler,
+                                std::function<void(int)> cleanup_handler)
     : strand_(net::make_strand(ioc_.get_executor()))
     , acceptor_(ioc_, tcp::endpoint(tcp::v4(), port))
     , message_handler_(handler)
+    , cleanup_callback_(cleanup_handler)
     , next_client_fd_(10000)  // TCP FD와 겹치지 않도록 큰 수로 시작
 {
 }
@@ -218,6 +220,16 @@ void WebSocketServer::do_accept()
                         std::move(socket), client_fd, message_handler_,
                         [this](int fd) { 
                             std::cout << "[WebSocketServer] 세션 제거 콜백 호출 (FD: " << fd << ")" << std::endl;
+                            // 플레이어 정리 콜백 호출 (연결 종료 시 플레이어 정리 및 빈 방 삭제)
+                            // cleanup_callback_는 CleanupPlayer를 호출하는데,
+                            // 이미 세션이 제거되는 중이므로 close_websocket_session=false로 호출해야 함
+                            // 하지만 cleanup_callback_는 int만 받으므로, 
+                            // CleanupPlayer 내부에서 이미 세션이 제거되었는지 확인하도록 수정
+                            if (cleanup_callback_)
+                            {
+                                cleanup_callback_(fd);
+                            }
+                            // 세션 제거 (cleanup 콜백 호출 후)
                             this->close_client(fd); 
                         });
                     
