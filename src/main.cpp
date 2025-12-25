@@ -1727,9 +1727,7 @@ int main(int argc, char* argv[])
         std::cout << "[Railway HTTP 모드] WebSocket 서버 시작 (포트: " << ws_port << ")" << std::endl;
         std::cout << "[Railway HTTP 모드] HTTP 요청을 WebSocket으로 업그레이드 처리" << std::endl;
         // cleanup 콜백을 람다로 감싸서 close_websocket_session=false로 호출
-        // cleanup 콜백을 람다로 감싸서 close_websocket_session=false로 호출
         ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage,
-            [](int fd) { CleanupPlayer(fd, false); }, 
             [](int fd) { CleanupPlayer(fd, false); });
         ws_server->start();
         
@@ -1748,9 +1746,7 @@ int main(int argc, char* argv[])
     // WebSocket 서버 시작 (활성화된 경우만)
     if (enable_websocket) {
         // cleanup 콜백을 람다로 감싸서 close_websocket_session=false로 호출
-        // cleanup 콜백을 람다로 감싸서 close_websocket_session=false로 호출
         ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage,
-            [](int fd) { CleanupPlayer(fd, false); }, 
             [](int fd) { CleanupPlayer(fd, false); });
         ws_server->start();
     } else {
