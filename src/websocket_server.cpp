@@ -4,10 +4,12 @@
 
 // WebSocketSession 구현
 WebSocketSession::WebSocketSession(tcp::socket socket, int client_fd,
-                                   std::function<void(int, const std::vector<char>&)> handler)
+                                   std::function<void(int, const std::vector<char>&)> handler,
+                                   std::function<void(int)> close_callback)
     : ws_(std::move(socket))
     , client_fd_(client_fd)
     , message_handler_(handler)
+    , close_session_callback_(close_callback)
     , is_writing_(false)
 {
 }
@@ -52,6 +54,11 @@ void WebSocketSession::on_read(beast::error_code ec, std::size_t bytes_transferr
     if (ec == websocket::error::closed)
     {
         std::cout << "[WebSocket] 클라이언트 연결 종료 (FD: " << client_fd_ << ")" << std::endl;
+        // 세션 제거 콜백 호출
+        if (close_session_callback_)
+        {
+            close_session_callback_(client_fd_);
+        }
         return;
     }
 
@@ -151,7 +158,12 @@ void WebSocketSession::on_write(beast::error_code ec, std::size_t bytes_transfer
 
 void WebSocketSession::fail(beast::error_code ec, char const* what)
 {
-    std::cerr << "[WebSocket] " << what << ": " << ec.message() << std::endl;
+    std::cerr << "[WebSocket] " << what << ": " << ec.message() << " (FD: " << client_fd_ << ")" << std::endl;
+    // 연결 오류 시 세션 제거 콜백 호출
+    if (close_session_callback_)
+    {
+        close_session_callback_(client_fd_);
+    }
 }
 
 // WebSocketServer 구현
@@ -194,7 +206,8 @@ void WebSocketServer::do_accept()
                 int client_fd = next_client_fd_++;
                 std::cout << "[WebSocketServer] 새 클라이언트 연결 수락 (FD: " << client_fd << ")" << std::endl;
                 auto session = std::make_shared<WebSocketSession>(
-                    std::move(socket), client_fd, message_handler_);
+                    std::move(socket), client_fd, message_handler_,
+                    [this](int fd) { this->close_client(fd); });
                 sessions_[client_fd] = session;
                 std::cout << "[WebSocketServer] 세션 저장 완료 (FD: " << client_fd 
                           << ", 총 세션 수: " << sessions_.size() << ")" << std::endl;
@@ -210,6 +223,14 @@ void WebSocketServer::run()
 }
 
 void WebSocketServer::send_to_client(int client_fd, const std::vector<char>& data)
+{
+    // io_context에서 실행되도록 post
+    net::post(ioc_, [this, client_fd, data]() {
+        do_send_to_client(client_fd, data);
+    });
+}
+
+void WebSocketServer::do_send_to_client(int client_fd, const std::vector<char>& data)
 {
     std::cout << "[WebSocketServer] send_to_client 호출 (FD: " << client_fd 
               << ", 메시지 크기: " << data.size() << " bytes, 총 세션 수: " 
@@ -237,6 +258,22 @@ void WebSocketServer::send_to_client(int client_fd, const std::vector<char>& dat
 
 void WebSocketServer::close_client(int client_fd)
 {
-    sessions_.erase(client_fd);
+    // io_context에서 실행되도록 post
+    net::post(ioc_, [this, client_fd]() {
+        auto it = sessions_.find(client_fd);
+        if (it != sessions_.end())
+        {
+            std::cout << "[WebSocketServer] 세션 제거 (FD: " << client_fd 
+                      << ", 제거 전 세션 수: " << sessions_.size() << ")" << std::endl;
+            sessions_.erase(it);
+            std::cout << "[WebSocketServer] 세션 제거 완료 (제거 후 세션 수: " 
+                      << sessions_.size() << ")" << std::endl;
+        }
+        else
+        {
+            std::cerr << "[WebSocketServer] 경고: 제거하려는 세션을 찾을 수 없음 (FD: " 
+                      << client_fd << ")" << std::endl;
+        }
+    });
 }
 

@@ -22,6 +22,7 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession>
     beast::flat_buffer buffer_;
     int client_fd_;  // 기존 TCP 서버와 호환을 위한 FD
     std::function<void(int, const std::vector<char>&)> message_handler_;
+    std::function<void(int)> close_session_callback_;  // 세션 제거 콜백
     
     // Write 큐 및 상태 관리
     std::vector<std::vector<char>> write_queue_;
@@ -29,7 +30,8 @@ class WebSocketSession : public std::enable_shared_from_this<WebSocketSession>
 
 public:
     explicit WebSocketSession(tcp::socket socket, int client_fd,
-                             std::function<void(int, const std::vector<char>&)> handler);
+                             std::function<void(int, const std::vector<char>&)> handler,
+                             std::function<void(int)> close_callback);
 
     void run();
     void send_message(const std::vector<char>& data);
@@ -66,6 +68,7 @@ public:
 private:
     void do_accept();
     void run();
+    void do_send_to_client(int client_fd, const std::vector<char>& data);
 };
 
 #endif
