@@ -724,6 +724,7 @@ void HandleBuffer(int client_fd, std::vector<char>& buffer)
         {
             
             std::cout << "  -> ID 330 (게임 시작) 요청 받음! (FD: " << client_fd << ")" << std::endl;
+            std::cout.flush(); // 로그 출력 강제 flush
 
             // 1. '어느 방'에서 보냈는지 찾기
             auto map_it = player_room_map.find(client_fd);
@@ -805,6 +806,7 @@ void HandleBuffer(int client_fd, std::vector<char>& buffer)
             {
                 // [성공!]
                 std::cout << "    -> [최종 승인] M3 게임 시작! (ID 331 방송)" << std::endl;
+                std::cout.flush(); // 로그 출력 강제 flush
                 
                 // [핵심 수정] 첫 턴 플레이어를 랜덤으로 선택
                 int total_players = (int)target_room.players.size();
@@ -843,19 +845,27 @@ void HandleBuffer(int client_fd, std::vector<char>& buffer)
 
                 // 2. '방 안의 모든 사람'에게 ID 430 방송
                 std::cout << "   -> [M3] 첫 턴(FD: " << first_turn_player_id << ") 시작! (ID 430 방송)" << std::endl;
+                std::cout.flush(); // 로그 출력 강제 flush
                 for (const Player& p : target_room.players)
                 {
                     SendMessage(p.fd, 430, turn_payload);
+                    std::cout << "   -> [ID 430 전송] FD " << p.fd << "에게 전송 완료" << std::endl;
                 }
+                std::cout << "   -> [ID 430 방송 완료] 총 " << target_room.players.size() << "명에게 전송" << std::endl;
+                std::cout.flush(); // 로그 출력 강제 flush
                 // ===============================================
+                }
+                else
+                {
+                    // [실패!]
+                    std::cerr << "    -> [최종 거부] '모두 준비' 상태가 아님. 요청 무시." << std::endl;
+                    // (방장에게 "아직 준비 안 됨"이라고 응답을 보내줘도 좋지만,
+                    // M2 규약상 필수는 아니므로 지금은 무시합니다.)
                 }
             }
             else
             {
-                // [실패!]
-                std::cerr << "    -> [최종 거부] '모두 준비' 상태가 아님. 요청 무시." << std::endl;
-                // (방장에게 "아직 준비 안 됨"이라고 응답을 보내줘도 좋지만,
-                // M2 규약상 필수는 아니므로 지금은 무시합니다.)
+                std::cerr << "    -> [상태 오류] INGAME 상태에서 ID 330 수신. 무시." << std::endl;
             }
             
             // 버퍼 정리
