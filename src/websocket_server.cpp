@@ -171,7 +171,7 @@ void WebSocketSession::fail(beast::error_code ec, char const* what)
 // WebSocketServer 구현
 WebSocketServer::WebSocketServer(unsigned short port,
                                 std::function<void(int, const std::vector<char>&)> handler)
-    : strand_(net::make_strand(ioc_))
+    : strand_(net::make_strand(ioc_.get_executor()))
     , acceptor_(ioc_, tcp::endpoint(tcp::v4(), port))
     , message_handler_(handler)
     , next_client_fd_(10000)  // TCP FD와 겹치지 않도록 큰 수로 시작
