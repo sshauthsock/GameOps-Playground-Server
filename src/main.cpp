@@ -556,13 +556,11 @@ void HandleBuffer(int client_fd, std::vector<char>& buffer)
                 std::strncpy(notify_payload.data() + sizeof(int), my_name.c_str(), 20);
                 notify_payload[sizeof(int) + 19] = '\0'; // 안전장치
                 
-                // 6-4. '나'를 뺀 '기존 방 멤버'에게 '순회'하며 '방송'
+                // 6-4. 입장한 플레이어도 포함하여 모든 플레이어에게 브로드캐스트
                 for (const Player& p : target_room.players)
                 {
-                    if (p.fd != client_fd) // '나'는 빼고 (Player 객체의 fd와 비교)
-                    {
-                        SendMessage(p.fd, 312, notify_payload);
-                    }
+                    SendMessage(p.fd, 312, notify_payload);
+                    std::cout << "    -> [ID 312 전송] FD " << p.fd << "에게 UserEnter Notify 전송 (입장한 플레이어: FD " << client_fd << ")" << std::endl;
                 }
             }
 
