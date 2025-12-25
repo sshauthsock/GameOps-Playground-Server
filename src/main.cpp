@@ -134,14 +134,22 @@ void HandleWebSocketMessage(int client_fd, const std::vector<char>& data)
     HandleBuffer(client_fd, buffer);
 }
 
-void CleanupPlayer(int client_fd)
+void CleanupPlayer(int client_fd, bool close_websocket_session = true)
 {
     std::cout << "[플레이어 정리 시작] (FD: " << client_fd << ")" << std::endl;
     
     // WebSocket 클라이언트인지 확인
-    if (is_websocket_client[client_fd] && ws_server)
+    // cleanup 콜백에서 호출된 경우 이미 세션이 제거되는 중이므로 중복 제거 방지
+    // cleanup 콜백은 close_client 호출 전에 호출되므로, 세션은 아직 존재함
+    // 하지만 cleanup 콜백 호출 후 close_client가 호출되므로, 여기서는 세션 제거를 하지 않음
+    if (close_websocket_session && is_websocket_client[client_fd] && ws_server)
     {
         ws_server->close_client(client_fd);
+        is_websocket_client.erase(client_fd);
+    }
+    else if (!close_websocket_session && is_websocket_client[client_fd])
+    {
+        // cleanup 콜백에서 호출된 경우: 세션은 close_client에서 제거되므로 여기서는 is_websocket_client만 제거
         is_websocket_client.erase(client_fd);
     }
     
@@ -198,7 +206,7 @@ void CleanupPlayer(int client_fd)
     // 6. [정리 4] '조견표'에서도 '나'를 제거
     player_room_map.erase(client_fd);
 
-    // 7. [방장 이전 로직] (ID 315와 동일)
+    // 7. [방장 이전 로직 및 빈 방 삭제]
     if (was_host)
     {
         std::cout << "   -> [방장 이전] (FD: " << client_fd << ")가 방장이었음!" << std::endl;
@@ -215,9 +223,19 @@ void CleanupPlayer(int client_fd)
             std::cout << "   -> 새 방장 임명 (FD: " << new_host_fd << ")" << std::endl;
         }
     }
-    else if (!players.empty()) 
+    else 
     {
-        new_host_fd = target_room.host_player_fd; // 기존 방장 유지
+        // 방장이 아닌 플레이어가 나갔을 때도 빈 방 확인
+        if (players.empty())
+        {
+            std::cout << "   -> [빈 방 삭제] 모든 플레이어가 나갔으므로 " << room_id << "번 방을 삭제." << std::endl;
+            global_rooms.erase(room_id);
+            new_host_fd = 0;
+        }
+        else
+        {
+            new_host_fd = target_room.host_player_fd; // 기존 방장 유지
+        }
     }
 
     // 8. [방송] '방에 남은 사람'들에게 ID 317 '방송'
@@ -1708,7 +1726,11 @@ int main(int argc, char* argv[])
         // Railway HTTP 서비스: WebSocket 서버만 시작 (HTTP 요청을 WebSocket으로 업그레이드)
         std::cout << "[Railway HTTP 모드] WebSocket 서버 시작 (포트: " << ws_port << ")" << std::endl;
         std::cout << "[Railway HTTP 모드] HTTP 요청을 WebSocket으로 업그레이드 처리" << std::endl;
-        ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage);
+        // cleanup 콜백을 람다로 감싸서 close_websocket_session=false로 호출
+        // cleanup 콜백을 람다로 감싸서 close_websocket_session=false로 호출
+        ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage,
+            [](int fd) { CleanupPlayer(fd, false); }, 
+            [](int fd) { CleanupPlayer(fd, false); });
         ws_server->start();
         
         // WebSocket 서버가 HTTP 요청을 받아서 WebSocket으로 업그레이드하므로
@@ -1725,7 +1747,11 @@ int main(int argc, char* argv[])
     // 로컬 개발 모드: TCP와 WebSocket 모두 사용
     // WebSocket 서버 시작 (활성화된 경우만)
     if (enable_websocket) {
-        ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage);
+        // cleanup 콜백을 람다로 감싸서 close_websocket_session=false로 호출
+        // cleanup 콜백을 람다로 감싸서 close_websocket_session=false로 호출
+        ws_server = std::make_unique<WebSocketServer>(ws_port, HandleWebSocketMessage,
+            [](int fd) { CleanupPlayer(fd, false); }, 
+            [](int fd) { CleanupPlayer(fd, false); });
         ws_server->start();
     } else {
         std::cout << "[배포 모드] WebSocket 서버 비활성화 (TCP 서버만 사용)" << std::endl;

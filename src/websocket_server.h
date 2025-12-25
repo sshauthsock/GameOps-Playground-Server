@@ -54,12 +54,14 @@ class WebSocketServer
     tcp::acceptor acceptor_;
     std::map<int, std::shared_ptr<WebSocketSession>> sessions_;
     std::function<void(int, const std::vector<char>&)> message_handler_;
+    std::function<void(int)> cleanup_callback_;  // 플레이어 정리 콜백
     int next_client_fd_;
     std::thread server_thread_;
 
 public:
     WebSocketServer(unsigned short port,
-                   std::function<void(int, const std::vector<char>&)> handler);
+                   std::function<void(int, const std::vector<char>&)> handler,
+                   std::function<void(int)> cleanup_handler = nullptr);
     ~WebSocketServer();
 
     void start();
