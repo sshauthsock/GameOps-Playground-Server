@@ -1,0 +1,33 @@
+# fly.toml app configuration file generated for gameops-playground-server on 2026-01-24T13:14:36+09:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'gameops-playground-server'
+primary_region = 'nrt'
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false  # Sleep 방지 (무료 플랜도 항상 실행)
+  auto_start_machines = true
+  min_machines_running = 1  # 최소 1개 머신 항상 실행
+  processes = ['app']
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    timeout = "5s"
+    path = "/"
+
+[[vm]]
+  memory = '1gb'
+  cpus = 1
+  memory_mb = 1024
