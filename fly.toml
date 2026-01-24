@@ -20,12 +20,13 @@ primary_region = 'nrt'
   min_machines_running = 1  # 최소 1개 머신 항상 실행
   processes = ['app']
 
-  [[http_service.checks]]
-    grace_period = "10s"
-    interval = "30s"
-    method = "GET"
-    timeout = "5s"
-    path = "/"
+  # 헬스 체크 비활성화 (WebSocket 서버는 HTTP GET 요청을 처리하지 않음)
+  # [[http_service.checks]]
+  #   grace_period = "10s"
+  #   interval = "30s"
+  #   method = "GET"
+  #   timeout = "5s"
+  #   path = "/"
 
 [[vm]]
   memory = '1gb'
